@@ -15,6 +15,14 @@ Config.MaxCharacters = {
 
 Config.DefaultSpawn = vector4(1417.81, 268.0, 89.61, 144.5)
 
+Config.SpawnLocations = {
+	["Valentine"] = vector4(-172.52, 636.88, 114.1, 55.0),
+	["Strawberry"] = vector4(-1780.95, -396.77, 156.29, 290.24),
+	["Rhodes"] = vector4(1234.74, -1301.14, 76.92, 134.69),
+	["Saint Denis"] = vector4(2687.36, -1458.25, 46.27, 27.6),
+	["Blackwater"] = vector4(-875.36, -1337.11, 43.98, 267.45),
+}
+
 Config.FaceFeatures = {
 	face_width = 0x84D6,
 	eyebrow_height = 0x3303,
