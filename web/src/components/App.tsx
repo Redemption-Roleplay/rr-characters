@@ -39,6 +39,11 @@ interface IcharacterData {
 	canCreate: boolean;
 }
 
+interface IspawnData {
+	locations: any[];
+	title: string;
+}
+
 interface Ichar {
 	name: string;
 	cid: string;
@@ -69,6 +74,7 @@ const App: React.FC = () => {
 	const [inputGender, setInputGender] = useState<string>('Male');
 
 	const [data, setData] = useState<Idata[]>([]);
+	const [spawnData, setSpawnData] = useState<IspawnData[]>([]);
 	const [title, setTitle] = useState<string>('');
 	const [description, setDescription] = useState<string>('');
 
@@ -100,8 +106,18 @@ const App: React.FC = () => {
 		if (data.desc) setDescription(data.desc);
 	});
 
+	useNuiEvent<IspawnData>('setSpawnData', (data) => {
+		setSpawnData(data.locations);
+		setTitle(data.title);
+	});
+
 	useNuiEvent<string>('setMenu', (data) => {
 		setMenu(data);
+	});
+
+	useNuiEvent('resetModals', () => {
+		setDeleteModal(false);
+		setNewCharModal(false);
 	});
 
 	useNuiEvent<IcharacterData>('setCharacters', (data) => {
@@ -116,15 +132,16 @@ const App: React.FC = () => {
 			if (item.id === id) {
 				if (type === 'decrease') {
 					if (item.value > 0) item.value--;
+					setData(tempArr);
+					fetchNui('updateMenuVariable', { type, id });
 				}
 				if (type === 'increase') {
 					if (item.value < item.values.length) item.value++;
+					setData(tempArr);
+					fetchNui('updateMenuVariable', { type, id });
 				}
 			}
 		});
-
-		setData(tempArr);
-		fetchNui('updateMenuVariable', { type, id });
 	};
 
 	const handleDeleteClick = (data: Ichar) => {
@@ -154,6 +171,10 @@ const App: React.FC = () => {
 			inputDOB,
 			inputGender,
 		});
+	};
+
+	const selectSpawn = (spawn: any) => {
+		fetchNui('selectSpawn', spawn);
 	};
 
 	return (
@@ -347,6 +368,33 @@ const App: React.FC = () => {
 									</div>
 								</div>
 							)}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{menu === 'spawnMenu' && (
+				<div className='menu-wrapper'>
+					<div className='menu'>
+						<div className='menu-header'>
+							<h1>{title}</h1>
+						</div>
+						<div className='menu-content'>
+							{spawnData.map((spawn: any) => (
+								<div className='char-item'>
+									<div className='char-item-text'>
+										<h1>{spawn.label}</h1>
+									</div>
+									<div className='char-item-icons'>
+										<div
+											className='char-item-icon'
+											onClick={(event) => selectSpawn(spawn.coords)}
+										>
+											<IoCaretForward />
+										</div>
+									</div>
+								</div>
+							))}
 						</div>
 					</div>
 				</div>
