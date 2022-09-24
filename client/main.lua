@@ -8,11 +8,18 @@ local lightsEnabled = {
 local currentMenu = nil
 local uiSkin = {}
 local uiClothing = {}
+local uiFeatures = {}
+
+local numberTable = {}
+for tempNum = 0, 200, 1 do
+	numberTable[#numberTable + 1] = tempNum
+end
 
 local temporaryPed = nil
+local currentPed = nil
 
 local currentCamera = nil
-local groundCamera, fixedCamera = nil, nil
+local groundCamera, fixedCamera, spawnCam = nil, nil, nil
 local tempCamera, tempCamera2 = nil, nil
 local interP, interP2 = false, false
 local interPSettings = {
@@ -26,11 +33,6 @@ local Clothing = {}
 local CharacterData = {}
 local TempCharacterData = {}
 local DefaultCharacterSkin = {}
-
-local numberTable = {}
-for tempNum = -100, 100, 1 do
-	numberTable[#numberTable + 1] = tempNum
-end
 
 Skin["Male"] = {}
 Skin["Female"] = {}
@@ -50,6 +52,10 @@ TempCharacterData["Info"] = {
 	["Age"] = nil,
 	["Nationality"] = nil,
 }
+
+local ShowBusyspinnerWithText = function(text)
+	N_0x7f78cd75cc4539e4(CreateVarString(10, "LITERAL_STRING", text))
+end
 
 local SendReactMessage = function(action, data)
 	SendNUIMessage({
@@ -125,13 +131,13 @@ end
 local switchCamera = function()
 	if currentCamera == "cam1" then
 		currentCamera = "cam2"
-		interpCamera2("cam2", temporaryPed)
+		interpCamera2("cam2", currentPed)
 	elseif currentCamera == "cam2" then
 		currentCamera = "cam3"
-		interpCamera2("cam3", temporaryPed)
+		interpCamera2("cam3", currentPed)
 	elseif currentCamera == "cam3" then
 		currentCamera = "cam1"
-		interpCamera2("cam1", temporaryPed)
+		interpCamera2("cam1", currentPed)
 	end
 end
 
@@ -192,22 +198,21 @@ local updateCharacterClothing = function(ped, sex, name, value)
 
 	Citizen.InvokeNative(0xD3A7B003ED343FD9, ped, value, false, true, true)
 
-	Citizen.InvokeNative(0x704C908E9C405136, PlayerPedId())
-	Citizen.InvokeNative(0xAAB86462966168CE, PlayerPedId(), 1)
-	Citizen.InvokeNative(0xCC8CA3E88256E58F, PlayerPedId(), 0, 1, 1, 1, 0)
+	Citizen.InvokeNative(0x704C908E9C405136, ped)
+	Citizen.InvokeNative(0xAAB86462966168CE, ped, 1)
+	Citizen.InvokeNative(0xCC8CA3E88256E58F, ped, 0, 1, 1, 1, 0)
 end
 
-local updateCharacterFace = function(index, value, new)
-	local new = new or false
-	local ped = new and temporaryPed or PlayerPedId()
-	local sex = new and TempCharacterData["Sex"] or (IsPedMale() and "Male" or "Female")
-
+local updateCharacterFace = function(index, value)
 	local index = tonumber(index)
 	local value = tonumber(value)
 
-	TempCharacterData.Features[index] = value or 1.0
+	print("Hash, Value, Ped", index, value, currentPed)
 
-	Citizen.InvokeNative(0x5653AB26C82938CF, ped, index, value)
+	TempCharacterData.Features[index] = value or 0.0
+
+	Citizen.InvokeNative(0x5653AB26C82938CF, currentPed, index, value)
+	Citizen.InvokeNative(0xCC8CA3E88256E58F, currentPed, 0, 1, 1, 1, 0)
 end
 
 local fixCharacterValues = function(ped, sex)
@@ -215,8 +220,6 @@ local fixCharacterValues = function(ped, sex)
 	while not Citizen.InvokeNative(0xA0BC8FAED8CFEB3C, ped) do
 		Wait(0)
 	end
-
-	print(sex)
 
 	Citizen.InvokeNative(0x0BFA1BD465CDFEFD, ped)
 	Citizen.InvokeNative(0xD3A7B003ED343FD9, ped, Skin[sex]["BODIES_UPPER"][1], false, true, true)
@@ -271,13 +274,14 @@ local createTemporaryPed = function(new, sex, skin, clothing)
 	end
 
 	temporaryPed = CreatePed(model, -558.9098, -3775.616, 238.59 - 0.5, 137.98, false, 0)
+	currentPed = temporaryPed
 
-	NetworkSetEntityInvisibleToNetwork(temporaryPed, true)
+	NetworkSetEntityInvisibleToNetwork(currentPed, true)
 
 	if new then
-		fixCharacterValues(temporaryPed, sex)
+		fixCharacterValues(currentPed, sex)
 	else
-		local bool = GeneratePlayerModel(temporaryPed, sex, skin, clothing)
+		local bool = GeneratePlayerModel(currentPed, sex, skin, clothing)
 	end
 end
 
@@ -301,7 +305,7 @@ local fetchFaceValues = function()
 	local rTable = {}
 
 	for k, v in pairs(Config.FaceFeatures) do
-		rTable[k] = { hash = v, numbers = numberTable }
+		rTable[k] = { hash = v, name = k, values = numberTable }
 	end
 
 	return rTable
@@ -377,6 +381,40 @@ end
 -- 	end)
 -- end
 
+local openFaceFeaturesMenu = function()
+	print("Opening face features menu..")
+	if not TempCharacterData["Sex"] then
+		local sex = IsPedMale(PlayerPedId()) and "Male" or "Female"
+		TempCharacterData["Sex"] = sex
+	end
+
+	local optionValues = fetchFaceValues()
+	local options = {}
+
+	for k, v in pairs(optionValues) do
+		uiFeatures[#uiFeatures + 1] = {
+			id = (#uiFeatures + 1),
+			type = k,
+			label = exports["d-core"]:SplitStr(k, "_"),
+			values = v.values,
+			value = CharacterData.Features[k] or 100,
+		}
+	end
+
+	currentMenu = "faceMenu"
+
+	interpCamera2("cam2", currentPed)
+
+	SetNuiFocus(true, true)
+	SendReactMessage("setInitialData", {
+		cloth = uiFeatures,
+		title = "Face Features Menu",
+	})
+
+	SendReactMessage("setMenu", "scrollMenu")
+	SendReactMessage("setVisible", true)
+end
+
 local openClothingMenu = function()
 	if not TempCharacterData["Sex"] then
 		local sex = IsPedMale(PlayerPedId()) and "Male" or "Female"
@@ -408,12 +446,13 @@ local openClothingMenu = function()
 end
 
 local openCreatorMenu = function()
+	print("Opening Creator Menu!")
 	if not TempCharacterData["Sex"] then
 		local sex = IsPedMale(PlayerPedId()) and "Male" or "Female"
 		TempCharacterData["Sex"] = sex
 	end
 
-	interpCamera2("cam2", temporaryPed)
+	-- interpCamera2("cam2", temporaryPed)
 
 	local optionValues = fetchSkinValues()
 
@@ -474,6 +513,51 @@ local openCreatorMenu = function()
 	SendReactMessage("setVisible", true)
 end
 
+openSpawnMenu = function()
+	local entityCoords = GetEntityCoords(PlayerPedId())
+	SetEntityVisible(PlayerPedId(), false)
+	DoScreenFadeOut(250)
+	Wait(1000)
+	DoScreenFadeIn(250)
+
+	spawnCam = CreateCamWithParams(
+		"DEFAULT_SCRIPTED_CAMERA",
+		entityCoords.x,
+		entityCoords.y,
+		entityCoords.z + 1500,
+		-85.00,
+		0.00,
+		0.00,
+		100.00,
+		false,
+		0
+	)
+	SetCamActive(spawnCam, true)
+	RenderScriptCams(true, false, 1, true, true)
+
+	Wait(500)
+
+	currentMenu = "spawnMenu"
+
+	SetNuiFocus(true, true)
+
+	local options = {}
+	for k, v in pairs(Config.SpawnLocations) do
+		options[#options + 1] = {
+			label = k,
+			coords = v,
+		}
+	end
+
+	SendReactMessage("setSpawnData", {
+		locations = options,
+		title = "Select Spawn",
+	})
+
+	SendReactMessage("setMenu", "spawnMenu")
+	SendReactMessage("setVisible", true)
+end
+
 RegisterNUICallback("updateMenuVariable", function(res)
 	local type = res.type
 	local id = res.id
@@ -490,9 +574,9 @@ RegisterNUICallback("updateMenuVariable", function(res)
 			end
 		end
 
-		updateCharacterValue(temporaryPed, TempCharacterData["Sex"], skinType, skinHash)
-		Citizen.InvokeNative(0x704C908E9C405136, temporaryPed)
-		Citizen.InvokeNative(0xCC8CA3E88256E58F, temporaryPed, 0, 1, 1, 1, 0)
+		updateCharacterValue(currentPed, TempCharacterData["Sex"], skinType, skinHash)
+		Citizen.InvokeNative(0x704C908E9C405136, currentPed)
+		Citizen.InvokeNative(0xCC8CA3E88256E58F, currentPed, 0, 1, 1, 1, 0)
 	elseif currentMenu == "clothingMenu" then
 		local skinHash = nil
 		local skinType = nil
@@ -505,27 +589,89 @@ RegisterNUICallback("updateMenuVariable", function(res)
 			end
 		end
 
-		print(skinHash, skinType)
+		updateCharacterClothing(currentPed, TempCharacterData["Sex"], skinType, skinHash)
+		Citizen.InvokeNative(0x704C908E9C405136, currentPed)
+		Citizen.InvokeNative(0xCC8CA3E88256E58F, currentPed, 0, 1, 1, 1, 0)
+	elseif currentMenu == "faceMenu" then
+		local faceHash = nil
+		-- local faceType = nil
+		local faceValue = nil
 
-		updateCharacterClothing(temporaryPed, TempCharacterData["Sex"], skinType, skinHash)
-		Citizen.InvokeNative(0x704C908E9C405136, temporaryPed)
-		Citizen.InvokeNative(0xCC8CA3E88256E58F, temporaryPed, 0, 1, 1, 1, 0)
+		for i = 1, #uiFeatures, 1 do
+			if uiFeatures[i].id == id then
+				if type == "decrease" then
+					if uiFeatures[i].value > 0 then
+						uiFeatures[i].value = uiFeatures[i].value - 1
+					end
+				elseif type == "increase" then
+					if uiFeatures[i].value < 200 then
+						uiFeatures[i].value = uiFeatures[i].value + 1
+					end
+				end
+
+				faceValue = (uiFeatures[i].value - 100) / 100
+				faceHash = Config.FaceFeatures[uiFeatures[i].type]
+
+				-- if uiFeatures[i].value > -100 and uiFeatures[i].value < 100 then
+
+				-- 	uiFeatures[i].value = type == "decrease" and uiFeatures[i].value - 1 or uiFeatures[i].value + 1
+				-- 	faceValue = (uiFeatures[i].value - 100) / 100
+				-- 	faceHash = Config.FaceFeatures[uiFeatures[i].type]
+				-- end
+			end
+		end
+
+		updateCharacterFace(faceHash, faceValue)
 	end
+end)
+
+RegisterNUICallback("selectSpawn", function(res)
+	DoScreenFadeOut(200)
+	Wait(500)
+
+	DoScreenFadeIn(200)
+
+	if DoesCamExist(spawnCam) then
+		DestroyCam(spawnCam, true)
+	end
+
+	SendReactMessage("setVisible", false)
+	SendReactMessage("resetModals")
+	SetNuiFocus(false, false)
+
+	SetEntityCoords(PlayerPedId(), res.x, res.y, res.z)
+	SetEntityHeading(PlayerPedId(), res.h)
+	FreezeEntityPosition(PlayerPedId(), false)
+	TriggerServerEvent("QBCore:Server:OnPlayerLoaded")
+	TriggerEvent("QBCore:Client:OnPlayerLoaded")
+
+	RenderScriptCams(false, true, 500, true, true)
+	SetCamActive(groundCamera, false)
+	DestroyCam(groundCamera, true)
+	SetCamActive(fixedCamera, false)
+	DestroyCam(fixedCamera, true)
+
+	SetEntityVisible(PlayerPedId(), true)
+	NetworkSetEntityInvisibleToNetwork(PlayerPedId(), false)
+	Wait(500)
+	DoScreenFadeIn(250)
 end)
 
 RegisterNUICallback("cameraClicked", function(res)
 	local camera = res
 	if camera == "head" then
-		interpCamera2("cam2", temporaryPed)
+		interpCamera2("cam2", currentPed)
 	elseif camera == "body" then
-		interpCamera2("cam3", temporaryPed)
+		interpCamera2("cam3", currentPed)
 	elseif camera == "feet" then
-		interpCamera2("cam1", temporaryPed)
+		interpCamera2("cam1", currentPed)
 	end
 end)
 
 RegisterNUICallback("continueClicked", function()
 	if currentMenu == "skinMenu" then
+		openFaceFeaturesMenu()
+	elseif currentMenu == "faceMenu" then
 		openClothingMenu()
 	elseif currentMenu == "clothingMenu" then
 		SetNuiFocus(false, false)
@@ -546,6 +692,7 @@ end)
 
 RegisterNUICallback("selectCharacter", function(res)
 	SendReactMessage("setVisible", false)
+	SetNuiFocus(false, false)
 
 	TriggerServerEvent(
 		"d-character:server:spawnPlayer",
@@ -559,6 +706,8 @@ end)
 
 RegisterNUICallback("createNewCharacter", function(res)
 	SendReactMessage("setVisible", false)
+	SendReactMessage("resetModals")
+	SetNuiFocus(false, false)
 
 	TempCharacterData["Info"]["Firstname"] = res.inputFirstname or "John"
 	TempCharacterData["Info"]["Lastname"] = res.inputLastname or "Doe"
@@ -567,18 +716,18 @@ RegisterNUICallback("createNewCharacter", function(res)
 
 	createTemporaryPed(true, TempCharacterData["Sex"])
 	interP = true
-	interpCamera(temporaryPed)
+	interpCamera(currentPed)
 	PlaySoundFrontend("gender_left", "RDRO_Character_Creator_Sounds", true, 0)
 	Wait(2000)
-	if temporaryPed then
+	if currentPed then
 		exports["menuapi"].CloseAll()
 		DoScreenFadeOut(1500)
 		Wait(2000)
-		interpCamera2("cam3", temporaryPed)
-		currentCamera = "cam3"
+		interpCamera2("cam2", currentPed)
+		currentCamera = "cam2"
 		interP2 = true
-		SetEntityCoords(temporaryPed, -558.56, -3781.16, 237.59)
-		SetEntityHeading(temporaryPed, 87.21)
+		SetEntityCoords(currentPed, -558.56, -3781.16, 237.59)
+		SetEntityHeading(currentPed, 87.21)
 		lightsEnabled["selector"] = false
 		lightsEnabled["customization"] = true
 		inCustomization = true
@@ -588,54 +737,53 @@ RegisterNUICallback("createNewCharacter", function(res)
 end)
 
 RegisterNetEvent("d-character:client:reloadSelect", function()
-	exports["menuapi"]:CloseAll()
+	SendReactMessage("resetModals")
 
-	if lib.progressCircle({
-		duration = 1500,
-		label = "Loading your characters..",
-		canCancel = false,
-	}) then
-		exports["d-core"]:TriggerCallback("d-character:server:fetchCharacters", function(characters, licence)
-			local PlayerTier = GetDonationTierFromLicense(license) or 0
-			local options = {}
-			if characters and #characters > 0 then
-				for i = 1, #characters, 1 do
-					options[#options + 1] = {
-						name = characters[i].charinfo.firstname .. " " .. characters[i].charinfo.lastname,
-						cid = characters[i].citizenid,
-						data = {
-							citizenid = characters[i].citizenid,
-							sex = characters[i].charinfo.gender == 0 and "Male" or "Female",
-							skin = characters[i].skin,
-							outfit = characters[i].outfit,
-						},
-					}
-				end
+	ShowBusyspinnerWithText("Loading your characters")
 
-				currentMenu = nil
+	Wait(1500)
 
-				SetNuiFocus(true, true)
-				SendReactMessage("setCharacters", {
-					characters = options,
-					canCreate = (#characters < Config.MaxCharacters[PlayerTier]) and true or false,
-				})
-
-				SendReactMessage("setMenu", "charMenu")
-				SendReactMessage("setVisible", true)
-			else
-				currentMenu = nil
-
-				SetNuiFocus(true, true)
-				SendReactMessage("setCharacters", {
-					characters = {},
-					canCreate = true,
-				})
-
-				SendReactMessage("setMenu", "charMenu")
-				SendReactMessage("setVisible", true)
+	BusyspinnerOff()
+	exports["d-core"]:TriggerCallback("d-character:server:fetchCharacters", function(characters, licence)
+		local PlayerTier = GetDonationTierFromLicense(license) or 0
+		local options = {}
+		if characters and #characters > 0 then
+			for i = 1, #characters, 1 do
+				options[#options + 1] = {
+					name = characters[i].charinfo.firstname .. " " .. characters[i].charinfo.lastname,
+					cid = characters[i].citizenid,
+					data = {
+						citizenid = characters[i].citizenid,
+						sex = characters[i].charinfo.gender == 0 and "Male" or "Female",
+						skin = characters[i].skin,
+						outfit = characters[i].outfit,
+					},
+				}
 			end
-		end)
-	end
+
+			currentMenu = nil
+
+			SetNuiFocus(true, true)
+			SendReactMessage("setCharacters", {
+				characters = options,
+				canCreate = (#characters < Config.MaxCharacters[PlayerTier]) and true or false,
+			})
+
+			SendReactMessage("setMenu", "charMenu")
+			SendReactMessage("setVisible", true)
+		else
+			currentMenu = nil
+
+			SetNuiFocus(true, true)
+			SendReactMessage("setCharacters", {
+				characters = {},
+				canCreate = true,
+			})
+
+			SendReactMessage("setMenu", "charMenu")
+			SendReactMessage("setVisible", true)
+		end
+	end)
 end)
 
 RegisterNetEvent("d-character:client:initCharSelect", function()
@@ -652,52 +800,52 @@ RegisterNetEvent("d-character:client:initCharSelect", function()
 		createCamera()
 	end
 
-	if lib.progressCircle({
-		duration = 1500,
-		label = "Loading your characters..",
-		canCancel = false,
-	}) then
-		exports["d-core"]:TriggerCallback("d-character:server:fetchCharacters", function(characters, licence)
-			local PlayerTier = GetDonationTierFromLicense(license) or 0
-			local options = {}
-			if characters and #characters > 0 then
-				for i = 1, #characters, 1 do
-					options[#options + 1] = {
-						name = characters[i].charinfo.firstname .. " " .. characters[i].charinfo.lastname,
-						cid = characters[i].citizenid,
-						data = {
-							citizenid = characters[i].citizenid,
-							sex = characters[i].charinfo.gender == 0 and "Male" or "Female",
-							skin = characters[i].skin,
-							outfit = characters[i].outfit,
-						},
-					}
-				end
+	ShowBusyspinnerWithText("Loading your characters")
 
-				currentMenu = nil
+	Wait(1500)
 
-				SetNuiFocus(true, true)
-				SendReactMessage("setCharacters", {
-					characters = options,
-					canCreate = (#characters < Config.MaxCharacters[PlayerTier]) and true or false,
-				})
+	BusyspinnerOff()
 
-				SendReactMessage("setMenu", "charMenu")
-				SendReactMessage("setVisible", true)
-			else
-				currentMenu = nil
-
-				SetNuiFocus(true, true)
-				SendReactMessage("setCharacters", {
-					characters = {},
-					canCreate = true,
-				})
-
-				SendReactMessage("setMenu", "charMenu")
-				SendReactMessage("setVisible", true)
+	exports["d-core"]:TriggerCallback("d-character:server:fetchCharacters", function(characters, licence)
+		local PlayerTier = GetDonationTierFromLicense(license) or 0
+		local options = {}
+		if characters and #characters > 0 then
+			for i = 1, #characters, 1 do
+				options[#options + 1] = {
+					name = characters[i].charinfo.firstname .. " " .. characters[i].charinfo.lastname,
+					cid = characters[i].citizenid,
+					data = {
+						citizenid = characters[i].citizenid,
+						sex = characters[i].charinfo.gender == 0 and "Male" or "Female",
+						skin = characters[i].skin,
+						outfit = characters[i].outfit,
+					},
+				}
 			end
-		end)
-	end
+
+			currentMenu = nil
+
+			SetNuiFocus(true, true)
+			SendReactMessage("setCharacters", {
+				characters = options,
+				canCreate = (#characters < Config.MaxCharacters[PlayerTier]) and true or false,
+			})
+
+			SendReactMessage("setMenu", "charMenu")
+			SendReactMessage("setVisible", true)
+		else
+			currentMenu = nil
+
+			SetNuiFocus(true, true)
+			SendReactMessage("setCharacters", {
+				characters = {},
+				canCreate = true,
+			})
+
+			SendReactMessage("setMenu", "charMenu")
+			SendReactMessage("setVisible", true)
+		end
+	end)
 end)
 
 AddEventHandler("onResourceStop", function()
@@ -794,24 +942,9 @@ RegisterNetEvent("d-character:client:spawnPlayer", function(skin, clothing, sex,
 	if GeneratePlayerModel(PlayerPedId(), sex, skin, clothing) then
 		Wait(1000)
 		if newPlayer then
-			SetEntityCoords(PlayerPedId(), Config.DefaultSpawn["x"], Config.DefaultSpawn["y"], Config.DefaultSpawn["z"])
-			SetEntityHeading(PlayerPedId(), Config.DefaultSpawn["h"])
-			FreezeEntityPosition(PlayerPedId(), false)
-			TriggerServerEvent("QBCore:Server:OnPlayerLoaded")
-			TriggerEvent("QBCore:Client:OnPlayerLoaded")
-
-			RenderScriptCams(false, true, 500, true, true)
-			SetCamActive(groundCamera, false)
-			DestroyCam(groundCamera, true)
-			SetCamActive(fixedCamera, false)
-			DestroyCam(fixedCamera, true)
-
-			SetEntityVisible(PlayerPedId(), true)
-			NetworkSetEntityInvisibleToNetwork(PlayerPedId(), false)
-			Wait(500)
-			DoScreenFadeIn(250)
+			openSpawnMenu()
 		else
-			local coords = coords or Config.DefaultSpawn
+			local coords = coords or openSpawnMenu()
 
 			SetEntityCoords(PlayerPedId(), coords["x"], coords["y"], coords["z"])
 			SetEntityHeading(PlayerPedId(), coords["h"])
